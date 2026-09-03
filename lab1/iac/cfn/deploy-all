@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+set -e
+
+REGION="eu-central-1"
+SERVICE_ROLE_STACK="SDL-Service-Roles"
+COGNITO_STACK="Kinesis-Data-Generator-Cognito-User"
+KDG_USERNAME="aws-datalake"
+KDG_PASSWORD="password12"
+
+echo "====Deploy all stacks via CloudFormation===="
+
+echo ""
+echo "---- [1/2] Deploying Service Roles stack: $SERVICE_ROLE_STACK ----"
+aws cloudformation deploy \
+  --template-file cfn.json \
+  --stack-name $SERVICE_ROLE_STACK \
+  --region $REGION \
+  --capabilities CAPABILITY_NAMED_IAM
+
+echo ""
+echo "---- [2/2] Deploying Cognito / KDG stack: $COGNITO_STACK ----"
+aws cloudformation deploy \
+  --template-file cognito-setup.yaml \
+  --stack-name $COGNITO_STACK \
+  --region $REGION \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    Username=$KDG_USERNAME \
+    Password=$KDG_PASSWORD
+
+echo ""
+echo "====All stacks deployed successfully===="
+
+echo ""
+echo "---- Kinesis Data Generator URL ----"
+aws cloudformation describe-stacks \
+  --stack-name $COGNITO_STACK \
+  --region $REGION \
+  --query "Stacks[0].Outputs[?OutputKey=='KinesisDataGeneratorUrl'].OutputValue" \
+  --output text

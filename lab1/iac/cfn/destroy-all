@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+set -e
+
+REGION="eu-central-1"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+S3_BUCKET="sdl-immersion-day-${ACCOUNT_ID}"
+SECRET_NAME="KinesisDataGeneratorUser"
+
+CFN_STACKS=(
+  "Kinesis-Data-Generator-Cognito-User"
+  "SDL-Service-Roles"
+)
+
+echo "====Destroying all infrastructure===="
+echo "Account : $ACCOUNT_ID"
+echo "Region  : $REGION"
+echo ""
+
+# ─── 2. Empty S3 bucket ───────────────────────────────────────────────────────
+
+echo "---- [2/4] Emptying S3 bucket: $S3_BUCKET ----"
+if aws s3api head-bucket --bucket "$S3_BUCKET" --region "$REGION" 2>/dev/null; then
+  aws s3 rm "s3://${S3_BUCKET}" --recursive --region "$REGION"
+  echo "Bucket emptied."
+else
+  echo "Bucket $S3_BUCKET not found, skipping."
+fi
+
+echo ""
+
+# ─── 3. Delete CloudFormation stacks ─────────────────────────────────────────
+
+echo "---- [3/4] Deleting CloudFormation stacks ----"
+
+for STACK in "${CFN_STACKS[@]}"; do
+  STATUS=$(aws cloudformation describe-stacks \
+    --stack-name "$STACK" \
+    --region "$REGION" \
+    --query "Stacks[0].StackStatus" \
+    --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+  if [ "$STATUS" == "DOES_NOT_EXIST" ]; then
+    echo "  Stack $STACK does not exist, skipping."
+    continue
+  fi
+
+  echo "  Deleting stack: $STACK (current status: $STATUS)"
+  aws cloudformation delete-stack --stack-name "$STACK" --region "$REGION"
+  aws cloudformation wait stack-delete-complete --stack-name "$STACK" --region "$REGION"
+  echo "  Stack $STACK deleted."
+done
+
+echo ""
+
+# ─── 4. Force-delete Secrets Manager secret ──────────────────────────────────
+
+echo "---- [4/4] Force-deleting Secrets Manager secret: $SECRET_NAME ----"
+if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "$REGION" 2>/dev/null; then
+  aws secretsmanager delete-secret \
+    --secret-id "$SECRET_NAME" \
+    --force-delete-without-recovery \
+    --region "$REGION"
+  echo "Secret $SECRET_NAME deleted."
+else
+  echo "Secret $SECRET_NAME not found, skipping."
+fi
+
+echo ""
+echo "====All infrastructure destroyed successfully===="
