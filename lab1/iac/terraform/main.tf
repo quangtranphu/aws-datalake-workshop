@@ -1,5 +1,5 @@
 terraform {
-  required_version = "~> 1.15"
+  required_version = "1.9.7"
 
   required_providers {
     aws = {
@@ -132,11 +132,29 @@ resource "aws_iam_role_policy" "firehose_s3_access" {
   })
 }
 
+# ─── Kinesis Firehose Delivery Stream ────────────────────────────────────────
+
+resource "aws_kinesis_firehose_delivery_stream" "sdl" {
+  name        = "sdl-firehose-stream"
+  destination = "extended_s3"
+
+  extended_s3_configuration {
+    role_arn            = aws_iam_role.firehose.arn
+    bucket_arn          = aws_s3_bucket.sdl.arn
+    prefix              = "raw/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/"
+    error_output_prefix = "error/"
+    buffering_size      = 1
+    buffering_interval  = 60
+    compression_format  = "GZIP"
+  }
+}
+
 # ─── Stack 2: SDL-Cognito-Setup (cognito-setup.yaml) ─────────────────────────
 
 resource "aws_secretsmanager_secret" "kdg" {
-  name        = "KinesisDataGeneratorUser"
-  description = "Secret for the Cognito User for the Kinesis Data Generator"
+  name                    = "KinesisDataGeneratorUser"
+  description             = "Secret for the Cognito User for the Kinesis Data Generator"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "kdg" {
@@ -344,6 +362,10 @@ output "firehose_role_arn" {
 
 output "kdg_secret_arn" {
   value = aws_secretsmanager_secret.kdg.arn
+}
+
+output "firehose_stream_arn" {
+  value = aws_kinesis_firehose_delivery_stream.sdl.arn
 }
 
 output "kdg_url" {
