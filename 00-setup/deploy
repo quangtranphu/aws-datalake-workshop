@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -e
+
+REGION="eu-central-1"
+SERVICE_ROLE_STACK="SDL-Service-Roles"
+
+echo "====Deploy SDL Service Role and S3 Bucket via CloudFormation using Admin account===="
+
+echo ""
+echo "---- [1/1] Deploying Service Roles and S3 stack: $SERVICE_ROLE_STACK ----"
+aws cloudformation deploy \
+  --template-file iam-freeconciled.json \
+  --stack-name $SERVICE_ROLE_STACK \
+  --region $REGION \
+  --capabilities CAPABILITY_NAMED_IAM

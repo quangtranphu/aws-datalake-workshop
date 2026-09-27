@@ -17,7 +17,7 @@ Parameters:
   PermissionsBoundaryArn:
     Description: OPTIONAL - IAM Permissions Boundary Policy ARN to attach to new IAM Roles
     Type: String
-    Default: ""
+    Default: "arn:aws:iam::220334428465:policy/SDL-KDG-Boundary"
 
 Metadata:
   AWS::CloudFormation::Interface:

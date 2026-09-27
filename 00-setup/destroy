@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+set -e
+
+REGION="eu-central-1"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+S3_BUCKET="sdl-immersion-day-${ACCOUNT_ID}"
+
+CFN_STACKS="SDL-Service-Roles"
+
+
+echo "====Destroying all infrastructures created by Admin===="
+echo "Account : $ACCOUNT_ID"
+echo "Region  : $REGION"
+echo ""
+
+# ─── 2. Delete CloudFormation stacks ─────────────────────────────────────────
+
+echo "---- [1/1] Deleting CloudFormation stacks ----"
+
+STATUS=$(aws cloudformation describe-stacks \
+--stack-name "$CFN_STACKS" \
+--region "$REGION" \
+--query "Stacks[0].StackStatus" \
+--output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+if [ "$STATUS" == "DOES_NOT_EXIST" ]; then
+echo "  Stack $CFN_STACKS does not exist, skipping."
+continue
+fi
+
+echo "  Deleting stack: $STACK (current status: $STATUS)"
+aws cloudformation delete-stack --stack-name "$STACK" --region "$REGION"
+aws cloudformation wait stack-delete-complete --stack-name "$STACK" --region "$REGION"
+echo "  Stack $CFN_STACKS deleted."
+
+echo ""

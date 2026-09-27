@@ -1,0 +1,816 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS Serverless Data Lake Immersion Day - encrypted S3 data storage, access logging, and least-privilege Glue and Firehose execution roles. NOTE: deploy with CAPABILITY_NAMED_IAM.",
+    "Resources": {
+      "SDLS3LoggingBucket": {
+        "Type": "AWS::S3::Bucket",
+        "Metadata": {
+          "checkov": {
+            "skip": [
+              {
+                "id": "CKV_AWS_18",
+                "comment": "This is the dedicated access-log destination bucket. Enabling server access logging on the destination itself would create recursive log delivery."
+              }
+            ]
+          }
+        },
+        "Properties": {
+          "BucketName": {
+            "Fn::Join": [
+              "-", [
+                "sdl-immersion-day",
+                {
+                  "Ref": "AWS::AccountId"
+                },
+                "logs"
+              ]
+            ]
+          },
+          "OwnershipControls": {
+            "Rules": [
+              {
+                "ObjectOwnership": "BucketOwnerPreferred"
+              }
+            ]
+          },
+          "PublicAccessBlockConfiguration": {
+            "BlockPublicAcls": true,
+            "BlockPublicPolicy": true,
+            "IgnorePublicAcls": true,
+            "RestrictPublicBuckets": true
+          },
+          "BucketEncryption": {
+            "ServerSideEncryptionConfiguration": [
+              {
+                "ServerSideEncryptionByDefault": {
+                  "SSEAlgorithm": "AES256"
+                }
+              }
+            ]
+          },
+          // "VersioningConfiguration": {
+          //   "Status": "Enabled"
+          // },
+          "LifecycleConfiguration": {
+            "Rules": [
+              {
+                "Id": "ExpireAccessLogs",
+                "Status": "Enabled",
+                "ExpirationInDays": 90,
+                "NoncurrentVersionExpiration": {
+                  "NoncurrentDays": 30
+                }
+              }
+            ]
+          }
+        }
+      },
+      "SDLS3Bucket": {
+        "Type": "AWS::S3::Bucket",
+        "DependsOn": "SDLS3LoggingBucketPolicy",
+        "Properties": {
+          "BucketName": {
+            "Fn::Join": [
+              "-", [
+                "sdl-immersion-day",
+                {
+                  "Ref": "AWS::AccountId"
+                }
+              ]
+            ]
+          },
+          "PublicAccessBlockConfiguration": {
+            "BlockPublicAcls": true,
+            "BlockPublicPolicy": true,
+            "IgnorePublicAcls": true,
+            "RestrictPublicBuckets": true
+          },
+          "BucketEncryption": {
+            "ServerSideEncryptionConfiguration": [
+              {
+                "ServerSideEncryptionByDefault": {
+                  "SSEAlgorithm": "AES256"
+                }
+              }
+            ]
+          },
+          // "VersioningConfiguration": {
+          //   "Status": "Enabled"
+          // },
+          "LoggingConfiguration": {
+            "DestinationBucketName": {
+              "Ref": "SDLS3LoggingBucket"
+            },
+            "LogFilePrefix": "access-logs/"
+          }
+        }
+      },
+      "SDLS3LoggingBucketPolicy": {
+        "Type": "AWS::S3::BucketPolicy",
+        "Properties": {
+          "Bucket": {
+            "Ref": "SDLS3LoggingBucket"
+          },
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "AllowS3ServerAccessLogs",
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "logging.s3.amazonaws.com"
+                },
+                "Action": "s3:PutObject",
+                "Resource": {
+                  "Fn::Sub": "${SDLS3LoggingBucket.Arn}/access-logs/*"
+                },
+                "Condition": {
+                  "ArnLike": {
+                    "aws:SourceArn": {
+                      "Fn::Sub": "arn:${AWS::Partition}:s3:::sdl-immersion-day-${AWS::AccountId}"
+                    }
+                  },
+                  "StringEquals": {
+                    "aws:SourceAccount": {
+                      "Ref": "AWS::AccountId"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "SDLGlueBoundary": {
+        "Type": "AWS::IAM::ManagedPolicy",
+        "Properties": {
+          "ManagedPolicyName": "SDL-GlueBoundary",
+          "Description": "Permissions boundary limiting SDL-GlueRole to workshop catalog, S3, logging, metrics, and Lake Formation data access",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "WorkshopGlueCatalog",
+                "Effect": "Allow",
+                "Action": [
+                  "glue:BatchCreatePartition",
+                  "glue:BatchDeletePartition",
+                  "glue:BatchGetPartition",
+                  "glue:CreatePartition",
+                  "glue:CreateTable",
+                  "glue:DeletePartition",
+                  "glue:GetDatabase",
+                  "glue:GetDatabases",
+                  "glue:GetPartition",
+                  "glue:GetPartitions",
+                  "glue:GetTable",
+                  "glue:GetTables",
+                  "glue:GetTableVersion",
+                  "glue:GetTableVersions",
+                  "glue:UpdatePartition",
+                  "glue:UpdateTable"
+                ],
+                "Resource": [
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/default"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/sdl-demo-data"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/sdl-demo-data/*"
+                  }
+                ]
+              },
+              {
+                "Sid": "LakeFormationDataAccess",
+                "Effect": "Allow",
+                "Action": "lakeformation:GetDataAccess",
+                "Resource": "*"
+              },
+              {
+                "Sid": "GlueMetrics",
+                "Effect": "Allow",
+                "Action": "cloudwatch:PutMetricData",
+                "Resource": "*",
+                "Condition": {
+                  "StringEquals": {
+                    "cloudwatch:namespace": "Glue"
+                  }
+                }
+              },
+              {
+                "Sid": "GlueLogs",
+                "Effect": "Allow",
+                "Action": [
+                  "logs:CreateLogGroup",
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "Resource": [
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/*"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/*:*"
+                  }
+                ]
+              },
+              {
+                "Sid": "WorkshopAndGlueAssetBuckets",
+                "Effect": "Allow",
+                "Action": [
+                  "s3:GetBucketLocation",
+                  "s3:ListBucket",
+                  "s3:ListBucketMultipartUploads"
+                ],
+                "Resource": [
+                  {
+                    "Fn::GetAtt": ["SDLS3Bucket", "Arn"]
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::aws-glue-assets-${AWS::AccountId}-${AWS::Region}"
+                  }
+                ]
+              },
+              {
+                "Sid": "WorkshopAndGlueAssetObjects",
+                "Effect": "Allow",
+                "Action": [
+                  "s3:AbortMultipartUpload",
+                  "s3:DeleteObject",
+                  "s3:GetObject",
+                  "s3:PutObject"
+                ],
+                "Resource": [
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/raw/*"
+                  },
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/scripts/*"
+                  },
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/compressed-parquet/*"
+                  },
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/output-etl-nb-jobs/*"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::aws-glue-assets-${AWS::AccountId}-${AWS::Region}/*"
+                  }
+                ]
+              },
+              {
+                "Sid": "GlueInteractiveSessionExecution",
+                "Effect": "Allow",
+                "Action": [
+                  "glue:CreateSession",
+                  "glue:DeleteSession",
+                  "glue:GetSession",
+                  "glue:GetStatement",
+                  "glue:ListStatements",
+                  "glue:RunStatement",
+                  "glue:StopSession",
+                  "glue:TagResource"
+                ],
+                "Resource": {
+                  "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:session/*"
+                }
+              },
+              {
+                "Sid": "PassGlueRoleForInteractiveSessions",
+                "Effect": "Allow",
+                "Action": "iam:PassRole",
+                "Resource": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SDL-GlueRole"
+                },
+                "Condition": {
+                  "StringEquals": {
+                    "iam:PassedToService": "glue.amazonaws.com"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "SDLGlueRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+          "RoleName": "SDL-GlueRole",
+          "PermissionsBoundary": {
+            "Ref": "SDLGlueBoundary"
+          },
+          "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": [
+                    "glue.amazonaws.com"
+                  ]
+                },
+                "Action": [
+                  "sts:AssumeRole"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "SDLGlueExecutionPolicy": {
+        "Type": "AWS::IAM::Policy",
+        "Properties": {
+          "PolicyName": "GlueWorkshopExecutionPermissions",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "WorkshopGlueCatalog",
+                "Effect": "Allow",
+                "Action": [
+                  "glue:BatchCreatePartition",
+                  "glue:BatchDeletePartition",
+                  "glue:BatchGetPartition",
+                  "glue:CreatePartition",
+                  "glue:CreateTable",
+                  "glue:DeletePartition",
+                  "glue:GetDatabase",
+                  "glue:GetDatabases",
+                  "glue:GetPartition",
+                  "glue:GetPartitions",
+                  "glue:GetTable",
+                  "glue:GetTables",
+                  "glue:GetTableVersion",
+                  "glue:GetTableVersions",
+                  "glue:UpdatePartition",
+                  "glue:UpdateTable"
+                ],
+                "Resource": [
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/default"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/sdl-demo-data"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/sdl-demo-data/*"
+                  }
+                ]
+              },
+              {
+                "Sid": "LakeFormationDataAccess",
+                "Effect": "Allow",
+                "Action": "lakeformation:GetDataAccess",
+                "Resource": "*"
+              },
+              {
+                "Sid": "GlueMetrics",
+                "Effect": "Allow",
+                "Action": "cloudwatch:PutMetricData",
+                "Resource": "*",
+                "Condition": {
+                  "StringEquals": {
+                    "cloudwatch:namespace": "Glue"
+                  }
+                }
+              },
+              {
+                "Sid": "GlueLogs",
+                "Effect": "Allow",
+                "Action": [
+                  "logs:CreateLogGroup",
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "Resource": [
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/*"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/*:*"
+                  }
+                ]
+              },
+              {
+                "Sid": "GlueInteractiveSessionExecution",
+                "Effect": "Allow",
+                "Action": [
+                  "glue:CreateSession",
+                  "glue:DeleteSession",
+                  "glue:GetSession",
+                  "glue:GetStatement",
+                  "glue:ListStatements",
+                  "glue:RunStatement",
+                  "glue:StopSession",
+                  "glue:TagResource"
+                ],
+                "Resource": {
+                  "Fn::Sub": "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:session/*"
+                }
+              },
+              {
+                "Sid": "PassGlueRoleForInteractiveSessions",
+                "Effect": "Allow",
+                "Action": "iam:PassRole",
+                "Resource": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SDL-GlueRole"
+                },
+                "Condition": {
+                  "StringEquals": {
+                    "iam:PassedToService": "glue.amazonaws.com"
+                  }
+                }
+              }
+            ]
+          },
+          "Roles": [
+            {
+              "Ref": "SDLGlueRole"
+            }
+          ]
+        }
+      },
+      "SDLGlueS3Policy": {
+        "Type": "AWS::IAM::Policy",
+        "Properties": {
+          "PolicyName": "GlueS3BucketPermissions",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "GlueBucketLevel",
+                "Effect": "Allow",
+                "Action": [
+                  "s3:ListBucket",
+                  "s3:GetBucketLocation",
+                  "s3:ListBucketMultipartUploads"
+                ],
+                "Resource": [
+                  {
+                    "Fn::GetAtt": ["SDLS3Bucket", "Arn"]
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::aws-glue-assets-${AWS::AccountId}-${AWS::Region}"
+                  }
+                ]
+              },
+              {
+                "Sid": "GlueObjectLevel",
+                "Effect": "Allow",
+                "Action": [
+                  "s3:AbortMultipartUpload",
+                  "s3:GetObject",
+                  "s3:PutObject",
+                  "s3:DeleteObject"
+                ],
+                "Resource": [
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/raw/*"
+                  },
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/scripts/*"
+                  },
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/compressed-parquet/*"
+                  },
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/output-etl-nb-jobs/*"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::aws-glue-assets-${AWS::AccountId}-${AWS::Region}/*"
+                  }
+                ]
+              }
+            ]
+          },
+          "Roles": [
+            {
+              "Ref": "SDLGlueRole"
+            }
+          ]
+        }
+      },
+      "SDLKdgBoundary": {
+        "Type": "AWS::IAM::ManagedPolicy",
+        "Properties": {
+          "ManagedPolicyName": "SDL-KDG-Boundary",
+          "Description": "Permissions boundary for roles created by the external Kinesis Data Generator setup stack",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "KdgSetupLogs",
+                "Effect": "Allow",
+                "Action": [
+                  "logs:CreateLogGroup",
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "Resource": {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:us-east-1:${AWS::AccountId}:log-group:/aws/lambda/KinesisDataGeneratorCognitoSetup*"
+                }
+              },
+              {
+                "Sid": "KdgUserPoolAdministration",
+                "Effect": "Allow",
+                "Action": [
+                  "cognito-idp:AdminConfirmSignUp",
+                  "cognito-idp:CreateUserPoolClient",
+                  "cognito-idp:AdminCreateUser"
+                ],
+                "Resource": {
+                  "Fn::Sub": "arn:${AWS::Partition}:cognito-idp:us-east-1:${AWS::AccountId}:userpool/*"
+                }
+              },
+              {
+                "Sid": "KdgCognitoResourceCreation",
+                "Effect": "Allow",
+                "Action": [
+                  "cognito-idp:CreateUserPool",
+                  "cognito-identity:CreateIdentityPool",
+                  "cognito-identity:SetIdentityPoolRoles"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "KdgRoleTrustSetup",
+                "Effect": "Allow",
+                "Action": "iam:UpdateAssumeRolePolicy",
+                "Resource": [
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/Kinesis-Data-Generator-Cognit-AuthenticatedUserRole-*"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/Kinesis-Data-Generator-Cogn-UnauthenticatedUserRole-*"
+                  }
+                ]
+              },
+              {
+                "Sid": "PassKdgRolesToCognitoIdentityOnly",
+                "Effect": "Allow",
+                "Action": "iam:PassRole",
+                "Resource": [
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/Kinesis-Data-Generator-Cognit-AuthenticatedUserRole-*"
+                  },
+                  {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/Kinesis-Data-Generator-Cogn-UnauthenticatedUserRole-*"
+                  }
+                ]
+              },
+              {
+                "Sid": "KdgStreamingDiscovery",
+                "Effect": "Allow",
+                "Action": [
+                  "ec2:DescribeRegions",
+                  "firehose:DescribeDeliveryStream",
+                  "firehose:ListDeliveryStreams",
+                  "kinesis:DescribeStream",
+                  "kinesis:ListStreams"
+                ],
+                "Resource": "*"
+              },
+              {
+                "Sid": "KdgWorkshopFirehoseDelivery",
+                "Effect": "Allow",
+                "Action": [
+                  "firehose:PutRecord",
+                  "firehose:PutRecordBatch"
+                ],
+                "Resource": {
+                  "Fn::Sub": "arn:${AWS::Partition}:firehose:*:${AWS::AccountId}:deliverystream/sdl-firehose-stream"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "SDLFirehoseRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+          "RoleName": "SDL-FirehoseRole",
+          "PermissionsBoundary": {
+            "Ref": "SDLFirehoseBoundary"
+          },
+          "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "",
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "firehose.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole",
+                "Condition": {
+                  "StringEquals": {
+                    "sts:ExternalId": {
+                      "Ref": "AWS::AccountId"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "SDLFirehoseLogGroup": {
+        "Type": "AWS::Logs::LogGroup",
+        "Metadata": {
+          "checkov": {
+            "skip": [
+              {
+                "id": "CKV_AWS_158",
+                "comment": "CloudWatch Logs encrypts this short-lived workshop log group at rest by default. A customer-managed KMS key would add key-policy and cleanup dependencies outside the workshop scope."
+              }
+            ]
+          }
+        },
+        "Properties": {
+          "LogGroupName": "/aws/kinesisfirehose/sdl-firehose-stream",
+          "RetentionInDays": 7
+        }
+      },
+      "SDLFirehoseLogStream": {
+        "Type": "AWS::Logs::LogStream",
+        "Properties": {
+          "LogGroupName": {
+            "Ref": "SDLFirehoseLogGroup"
+          },
+          "LogStreamName": "S3Delivery"
+        }
+      },
+      "SDLFirehoseBoundary": {
+        "Type": "AWS::IAM::ManagedPolicy",
+        "Properties": {
+          "ManagedPolicyName": "SDL-FirehoseBoundary",
+          "Description": "Permissions boundary limiting SDL-FirehoseRole to workshop delivery prefixes and its log group",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "FirehoseBucketAccess",
+                "Effect": "Allow",
+                "Action": [
+                  "s3:GetBucketLocation",
+                  "s3:ListBucket",
+                  "s3:ListBucketMultipartUploads"
+                ],
+                "Resource": {
+                  "Fn::GetAtt": ["SDLS3Bucket", "Arn"]
+                },
+                "Condition": {
+                  "StringLike": {
+                    "s3:prefix": [
+                      "raw/*",
+                      "error/*"
+                    ]
+                  }
+                }
+              },
+              {
+                "Sid": "FirehoseObjectDelivery",
+                "Effect": "Allow",
+                "Action": [
+                  "s3:AbortMultipartUpload",
+                  "s3:PutObject"
+                ],
+                "Resource": [
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/raw/*"
+                  },
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/error/*"
+                  }
+                ]
+              },
+              {
+                "Sid": "FirehoseErrorLogging",
+                "Effect": "Allow",
+                "Action": "logs:PutLogEvents",
+                "Resource": {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/sdl-firehose-stream:*"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "SDLFirehoseS3Policy": {
+        "Type": "AWS::IAM::Policy",
+        "Properties": {
+          "PolicyName": "FirehoseS3DeliveryPermissions",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "FirehoseS3Delivery",
+                "Effect": "Allow",
+                "Action": [
+                  "s3:GetBucketLocation",
+                  "s3:ListBucket",
+                  "s3:ListBucketMultipartUploads"
+                ],
+                "Resource": {
+                  "Fn::GetAtt": ["SDLS3Bucket", "Arn"]
+                },
+                "Condition": {
+                  "StringLike": {
+                    "s3:prefix": [
+                      "raw/*",
+                      "error/*"
+                    ]
+                  }
+                }
+              },
+              {
+                "Sid": "FirehoseObjectDelivery",
+                "Effect": "Allow",
+                "Action": [
+                  "s3:AbortMultipartUpload",
+                  "s3:PutObject"
+                ],
+                "Resource": [
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/raw/*"
+                  },
+                  {
+                    "Fn::Sub": "${SDLS3Bucket.Arn}/error/*"
+                  }
+                ]
+              }
+            ]
+          },
+          "Roles": [
+            {
+              "Ref": "SDLFirehoseRole"
+            }
+          ]
+        }
+      },
+      "SDLFirehoseLogsPolicy": {
+        "Type": "AWS::IAM::Policy",
+        "Properties": {
+          "PolicyName": "FirehoseCloudWatchLogsPermissions",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "FirehoseErrorLogging",
+                "Effect": "Allow",
+                "Action": "logs:PutLogEvents",
+                "Resource": {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/sdl-firehose-stream:*"
+                }
+              }
+            ]
+          },
+          "Roles": [
+            {
+              "Ref": "SDLFirehoseRole"
+            }
+          ]
+        }
+      }
+    },
+    "Outputs": {
+      "SDLDataBucketName": {
+        "Description": "Serverless Data Lake data bucket",
+        "Value": {
+          "Ref": "SDLS3Bucket"
+        }
+      },
+      "SDLGlueRoleArn": {
+        "Description": "IAM role ARN for AWS Glue",
+        "Value": {
+          "Fn::GetAtt": ["SDLGlueRole", "Arn"]
+        }
+      },
+      "SDLGlueBoundaryArn": {
+        "Description": "Permissions boundary managed policy ARN for SDL-GlueRole",
+        "Value": {
+          "Ref": "SDLGlueBoundary"
+        }
+      },
+      "SDLFirehoseRoleArn": {
+        "Description": "IAM role ARN for Amazon Data Firehose",
+        "Value": {
+          "Fn::GetAtt": ["SDLFirehoseRole", "Arn"]
+        }
+      },
+      "SDLKdgBoundaryArn": {
+        "Description": "Permissions boundary ARN to provide to the external Kinesis Data Generator setup stack",
+        "Value": {
+          "Ref": "SDLKdgBoundary"
+        }
+      }
+    }
+  }

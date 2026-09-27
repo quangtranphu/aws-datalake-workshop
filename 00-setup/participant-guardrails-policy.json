@@ -1,0 +1,169 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "CreateBoundaryConstrainedKdgRolesThroughCloudFormation",
+        "Effect": "Allow",
+        "Action": "iam:CreateRole",
+        "Resource": [
+          "arn:aws:iam::*:role/Kinesis-Data-Generator-Cog-SetupLambdaExecutionRole-*",
+          "arn:aws:iam::*:role/Kinesis-Data-Generator-Cognit-AuthenticatedUserRole-*",
+          "arn:aws:iam::*:role/Kinesis-Data-Generator-Cogn-UnauthenticatedUserRole-*"
+        ],
+        "Condition": {
+          "ForAnyValue:StringEquals": {
+            "aws:CalledVia": "cloudformation.amazonaws.com"
+          },
+          "ArnEquals": {
+            "iam:PermissionsBoundary": "arn:aws:iam::*:policy/SDL-KDG-Boundary"
+          }
+        }
+      },
+      {
+        "Sid": "ManageBoundaryConstrainedKdgRolesThroughCloudFormation",
+        "Effect": "Allow",
+        "Action": [
+          "iam:DeleteRole",
+          "iam:DeleteRolePolicy",
+          "iam:GetRole",
+          "iam:PutRolePolicy",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:UpdateAssumeRolePolicy"
+        ],
+        "Resource": [
+          "arn:aws:iam::*:role/Kinesis-Data-Generator-Cog-SetupLambdaExecutionRole-*",
+          "arn:aws:iam::*:role/Kinesis-Data-Generator-Cognit-AuthenticatedUserRole-*",
+          "arn:aws:iam::*:role/Kinesis-Data-Generator-Cogn-UnauthenticatedUserRole-*"
+        ],
+        "Condition": {
+          "ForAnyValue:StringEquals": {
+            "aws:CalledVia": "cloudformation.amazonaws.com"
+          }
+        }
+      },
+      {
+        "Sid": "PassKdgSetupRoleToLambdaThroughCloudFormation",
+        "Effect": "Allow",
+        "Action": "iam:PassRole",
+        "Resource": "arn:aws:iam::*:role/Kinesis-Data-Generator-Cog-SetupLambdaExecutionRole-*",
+        "Condition": {
+          "ForAnyValue:StringEquals": {
+            "aws:CalledVia": "cloudformation.amazonaws.com"
+          },
+          "StringEquals": {
+            "iam:PassedToService": "lambda.amazonaws.com"
+          }
+        }
+      },
+      {
+        "Sid": "ProvisionKdgLambdaAndSecretThroughCloudFormation",
+        "Effect": "Allow",
+        "Action": [
+          "lambda:CreateFunction",
+          "lambda:DeleteFunction",
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+          "lambda:InvokeFunction",
+          "lambda:TagResource",
+          "lambda:UntagResource",
+          "lambda:UpdateFunctionCode",
+          "lambda:UpdateFunctionConfiguration",
+          "secretsmanager:CreateSecret",
+          "secretsmanager:DeleteSecret",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:TagResource",
+          "secretsmanager:UntagResource",
+          "secretsmanager:UpdateSecret"
+        ],
+        "Resource": [
+          "arn:aws:lambda:us-east-1:*:function:KinesisDataGeneratorCognitoSetup",
+          "arn:aws:secretsmanager:us-east-1:*:secret:KinesisDataGeneratorUser-*"
+        ],
+        "Condition": {
+          "ForAnyValue:StringEquals": {
+            "aws:CalledVia": "cloudformation.amazonaws.com"
+          }
+        }
+      },
+      {
+        "Sid": "DenyPrivilegeEscalationAndIdentityAdministration",
+        "Effect": "Deny",
+        "Action": [
+          "iam:AddUserToGroup",
+          "iam:AttachGroupPolicy",
+          "iam:AttachRolePolicy",
+          "iam:AttachUserPolicy",
+          "iam:CreateAccessKey",
+          "iam:CreateGroup",
+          "iam:CreateLoginProfile",
+          "iam:CreatePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:CreateRole",
+          "iam:CreateUser",
+          "iam:DeleteAccessKey",
+          "iam:DeleteGroup",
+          "iam:DeleteLoginProfile",
+          "iam:DeletePolicy",
+          "iam:DeletePolicyVersion",
+          "iam:DeleteRole",
+          "iam:DeleteRolePolicy",
+          "iam:DeleteUser",
+          "iam:DeleteUserPolicy",
+          "iam:DetachGroupPolicy",
+          "iam:DetachRolePolicy",
+          "iam:DetachUserPolicy",
+          "iam:PutGroupPolicy",
+          "iam:PutRolePolicy",
+          "iam:PutUserPolicy",
+          "iam:RemoveUserFromGroup",
+          "iam:SetDefaultPolicyVersion",
+          "iam:UpdateAssumeRolePolicy",
+          "iam:UpdateLoginProfile",
+          "iam:UpdateRole",
+          "iam:UpdateRoleDescription",
+          "iam:UpdateUser"
+        ],
+        "Resource": "*",
+        "Condition": {
+          "Null": {
+            "aws:CalledVia": "true"
+          }
+        }
+      },
+      {
+        "Sid": "DenyAccountAndOrganizationsAdministration",
+        "Effect": "Deny",
+        "Action": [
+          "account:*",
+          "organizations:*"
+        ],
+        "Resource": "*"
+      },
+      {
+        "Sid": "DenyUnneededComputeServices",
+        "Effect": "Deny",
+        "Action": [
+          "batch:*",
+          "ec2:RunInstances",
+          "ec2:CreateFleet",
+          "ec2:RequestSpotInstances",
+          "ecs:CreateCluster",
+          "ecs:CreateService",
+          "ecs:RegisterTaskDefinition",
+          "eks:*",
+          "elasticmapreduce:*",
+          "sagemaker:CreateApp",
+          "sagemaker:CreateDomain",
+          "sagemaker:CreateEndpoint",
+          "sagemaker:CreateEndpointConfig",
+          "sagemaker:CreateModel",
+          "sagemaker:CreateNotebookInstance",
+          "sagemaker:CreateTrainingJob"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }

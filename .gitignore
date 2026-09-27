@@ -2,3 +2,9 @@
 .terraform.lock.hcl
 terraform.tfstate
 terraform.tfstate.backup
+venv/
+__pycache__/
+other-docs/
+Claude.md
+.claude/
+sample-strands-agents-hands-on-workshop/

@@ -30,106 +30,18 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 data "aws_partition" "current" {}
 
-# ─── Stack 1: SDL-Service-Roles (cfn.json) ───────────────────────────────────
+# ─── Pre-existing resources created by admin (iam-freeconciled.json CFn stack) ─
 
-resource "aws_s3_bucket" "sdl" {
+data "aws_s3_bucket" "sdl" {
   bucket = "sdl-immersion-day-${data.aws_caller_identity.current.account_id}"
 }
 
-resource "aws_s3_bucket_public_access_block" "sdl" {
-  bucket = aws_s3_bucket.sdl.id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-resource "aws_iam_role" "glue" {
+data "aws_iam_role" "glue" {
   name = "SDL-GlueRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "glue.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
-  })
-
 }
 
-resource "aws_iam_role_policy_attachment" "glue_service" {
-  role       = aws_iam_role.glue.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
-}
-
-resource "aws_iam_role_policy" "glue_interactive_sessions" {
-  name = "AWSGlueInteractiveSessions"
-  role = aws_iam_role.glue.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = "iam:PassRole"
-      Resource = aws_iam_role.glue.arn
-      Condition = {
-        StringLike = { "iam:PassedToService" = "glue.amazonaws.com" }
-      }
-    }]
-  })
-}
-
-resource "aws_iam_role" "firehose" {
+data "aws_iam_role" "firehose" {
   name = "SDL-FirehoseRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Sid       = ""
-      Effect    = "Allow"
-      Principal = { Service = "firehose.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-      Condition = {
-        StringEquals = { "sts:ExternalId" = data.aws_caller_identity.current.account_id }
-      }
-    }]
-  })
-
-}
-
-resource "aws_iam_role_policy_attachment" "firehose_cloudwatch" {
-  role       = aws_iam_role.firehose.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
-}
-
-resource "aws_iam_role_policy" "s3_access" {
-  name = "S3BucketPermissions"
-  role = aws_iam_role.glue.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
-      Resource = "${aws_s3_bucket.sdl.arn}/*"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "firehose_s3_access" {
-  name = "S3BucketPermissions"
-  role = aws_iam_role.firehose.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
-      Resource = "${aws_s3_bucket.sdl.arn}/*"
-    }]
-  })
 }
 
 # ─── Kinesis Firehose Delivery Stream ────────────────────────────────────────
@@ -139,8 +51,8 @@ resource "aws_kinesis_firehose_delivery_stream" "sdl" {
   destination = "extended_s3"
 
   extended_s3_configuration {
-    role_arn            = aws_iam_role.firehose.arn
-    bucket_arn          = aws_s3_bucket.sdl.arn
+    role_arn            = data.aws_iam_role.firehose.arn
+    bucket_arn          = data.aws_s3_bucket.sdl.arn
     prefix              = "raw/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/"
     error_output_prefix = "error/"
     buffering_size      = 1
@@ -349,15 +261,15 @@ resource "aws_cognito_identity_pool_roles_attachment" "kdg" {
 # ─── Outputs ─────────────────────────────────────────────────────────────────
 
 output "s3_bucket_name" {
-  value = aws_s3_bucket.sdl.bucket
+  value = data.aws_s3_bucket.sdl.bucket
 }
 
 output "glue_role_arn" {
-  value = aws_iam_role.glue.arn
+  value = data.aws_iam_role.glue.arn
 }
 
 output "firehose_role_arn" {
-  value = aws_iam_role.firehose.arn
+  value = data.aws_iam_role.firehose.arn
 }
 
 output "kdg_secret_arn" {
