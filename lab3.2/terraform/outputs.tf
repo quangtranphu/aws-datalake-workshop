@@ -25,12 +25,12 @@ output "aoss_collection_arn" {
 
 output "kb_iam_role_arn" {
   description = "IAM role ARN assumed by the Bedrock Knowledge Base"
-  value       = aws_iam_role.kb_role.arn
+  value       = data.aws_iam_role.kb_role.arn
 }
 
 output "agentcore_iam_role_arn" {
   description = "IAM role ARN to pass to AgentCore runtime for the GDELT agent"
-  value       = aws_iam_role.agentcore_role.arn
+  value       = data.aws_iam_role.agentcore_role.arn
 }
 
 output "sync_command" {

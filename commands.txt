@@ -1,0 +1,5 @@
+aws configure --profile admin
+aws s3 sync s3://gdelt-open-data/events/ s3://sdl-immersion-day-220334428465/gdelt/events/ --exclude "*" --include "201101*" --copy-props none
+
+aws --profile admin iam create-service-linked-role \
+  --aws-service-name observability.aoss.amazonaws.com

@@ -779,6 +779,144 @@
           }
         ]
       }
+    },
+    "SDLBedrockKBRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "gdelt-agent-kb-role",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": "bedrock.amazonaws.com" },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": { "aws:SourceAccount": { "Ref": "AWS::AccountId" } },
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "gdelt-agent-kb-policy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "BedrockInvokeEmbeddingModel",
+                  "Effect": "Allow",
+                  "Action": ["bedrock:InvokeModel"],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "S3ReadGdeltData",
+                  "Effect": "Allow",
+                  "Action": ["s3:GetObject", "s3:ListBucket"],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:s3:::sdl-immersion-day-${AWS::AccountId}"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:s3:::sdl-immersion-day-${AWS::AccountId}/gdelt/*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "AOSSVectorIndexAccess",
+                  "Effect": "Allow",
+                  "Action": ["aoss:APIAccessAll"],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "SDLAgentCoreRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "gdelt-agent-agentcore-role",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": "bedrock-agentcore.amazonaws.com" },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": { "aws:SourceAccount": { "Ref": "AWS::AccountId" } }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "gdelt-agent-agentcore-policy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "BedrockInvokeModels",
+                  "Effect": "Allow",
+                  "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "BedrockKBRetrieve",
+                  "Effect": "Allow",
+                  "Action": ["bedrock:Retrieve", "bedrock:RetrieveAndGenerate"],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*"
+                  }
+                },
+                {
+                  "Sid": "S3ReadGdeltData",
+                  "Effect": "Allow",
+                  "Action": ["s3:GetObject", "s3:ListBucket"],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:s3:::sdl-immersion-day-${AWS::AccountId}"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:s3:::sdl-immersion-day-${AWS::AccountId}/gdelt/*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "CloudWatchLogs",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/*"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
     }
   },
   "Outputs": {
@@ -810,6 +948,18 @@
       "Description": "Permissions boundary ARN to provide to the external Kinesis Data Generator setup stack",
       "Value": {
         "Ref": "SDLKdgBoundary"
+      }
+    },
+    "SDLBedrockKBRoleArn": {
+      "Description": "IAM role ARN for Bedrock Knowledge Base (lab3.2)",
+      "Value": {
+        "Fn::GetAtt": ["SDLBedrockKBRole", "Arn"]
+      }
+    },
+    "SDLAgentCoreRoleArn": {
+      "Description": "IAM role ARN for AgentCore runtime (lab3.2)",
+      "Value": {
+        "Fn::GetAtt": ["SDLAgentCoreRole", "Arn"]
       }
     }
   }

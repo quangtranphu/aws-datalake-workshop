@@ -1,69 +1,19 @@
 data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
 
 locals {
   account_id     = data.aws_caller_identity.current.account_id
-  region         = data.aws_region.current.name
+  region         = var.aws_region
   collection_name = "${var.project_name}-vectors"
   embedding_model_arn = "arn:aws:bedrock:${local.region}::foundation-model/${var.embedding_model_id}"
   gdelt_bucket_arn    = "arn:aws:s3:::${var.gdelt_bucket}"
 }
 
 # ---------------------------------------------------------------------------
-# IAM — Bedrock Knowledge Base role
+# IAM — Bedrock Knowledge Base role (pre-created by 00-setup CloudFormation)
 # ---------------------------------------------------------------------------
 
-resource "aws_iam_role" "kb_role" {
+data "aws_iam_role" "kb_role" {
   name = "${var.project_name}-kb-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "bedrock.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-      Condition = {
-        StringEquals = {
-          "aws:SourceAccount" = local.account_id
-        }
-        ArnLike = {
-          "aws:SourceArn" = "arn:aws:bedrock:${local.region}:${local.account_id}:knowledge-base/*"
-        }
-      }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "kb_policy" {
-  name = "${var.project_name}-kb-policy"
-  role = aws_iam_role.kb_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "BedrockInvokeEmbeddingModel"
-        Effect = "Allow"
-        Action = ["bedrock:InvokeModel"]
-        Resource = [local.embedding_model_arn]
-      },
-      {
-        Sid    = "S3ReadGdeltData"
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:ListBucket"]
-        Resource = [
-          local.gdelt_bucket_arn,
-          "${local.gdelt_bucket_arn}/${var.gdelt_prefix}*",
-        ]
-      },
-      {
-        Sid    = "AOSSVectorIndexAccess"
-        Effect = "Allow"
-        Action = ["aoss:APIAccessAll"]
-        Resource = [aws_opensearchserverless_collection.gdelt.arn]
-      },
-    ]
-  })
 }
 
 # ---------------------------------------------------------------------------
@@ -123,7 +73,7 @@ resource "aws_opensearchserverless_access_policy" "access" {
       },
     ]
     Principal = concat(
-      [aws_iam_role.kb_role.arn],
+      [data.aws_iam_role.kb_role.arn],
       var.additional_admin_arns,
     )
   }])
@@ -158,7 +108,7 @@ resource "time_sleep" "wait_for_collection" {
 resource "aws_bedrockagent_knowledge_base" "gdelt" {
   name        = "${var.project_name}-kb"
   description = "Knowledge base over GDELT event data at s3://${var.gdelt_bucket}/${var.gdelt_prefix}"
-  role_arn    = aws_iam_role.kb_role.arn
+  role_arn    = data.aws_iam_role.kb_role.arn
 
   knowledge_base_configuration {
     type = "VECTOR"
@@ -212,69 +162,9 @@ resource "aws_bedrockagent_data_source" "gdelt_s3" {
 }
 
 # ---------------------------------------------------------------------------
-# IAM — AgentCore runtime role
-# Attach to the AgentCore runtime so it can call Bedrock and retrieve from the KB.
+# IAM — AgentCore runtime role (pre-created by 00-setup CloudFormation)
 # ---------------------------------------------------------------------------
 
-resource "aws_iam_role" "agentcore_role" {
+data "aws_iam_role" "agentcore_role" {
   name = "${var.project_name}-agentcore-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "bedrock-agentcore.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-      Condition = {
-        StringEquals = {
-          "aws:SourceAccount" = local.account_id
-        }
-      }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "agentcore_policy" {
-  name = "${var.project_name}-agentcore-policy"
-  role = aws_iam_role.agentcore_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "BedrockInvokeModels"
-        Effect = "Allow"
-        Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-        Resource = ["arn:aws:bedrock:${local.region}::foundation-model/*"]
-      },
-      {
-        Sid    = "BedrockKBRetrieve"
-        Effect = "Allow"
-        Action = [
-          "bedrock:Retrieve",
-          "bedrock:RetrieveAndGenerate",
-        ]
-        Resource = [aws_bedrockagent_knowledge_base.gdelt.arn]
-      },
-      {
-        Sid    = "S3ReadGdeltData"
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:ListBucket"]
-        Resource = [
-          local.gdelt_bucket_arn,
-          "${local.gdelt_bucket_arn}/${var.gdelt_prefix}*",
-        ]
-      },
-      {
-        Sid    = "CloudWatchLogs"
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents",
-        ]
-        Resource = ["arn:aws:logs:${local.region}:${local.account_id}:log-group:/aws/bedrock-agentcore/*"]
-      },
-    ]
-  })
 }

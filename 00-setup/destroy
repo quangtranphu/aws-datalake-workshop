@@ -3,7 +3,7 @@
 set -e
 
 REGION="eu-central-1"
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ACCOUNT_ID=$(aws --profile admin sts get-caller-identity --query Account --output text)
 S3_BUCKET="sdl-immersion-day-${ACCOUNT_ID}"
 
 CFN_STACKS="SDL-Service-Roles"
@@ -18,7 +18,7 @@ echo ""
 
 echo "---- [1/1] Deleting CloudFormation stacks ----"
 
-STATUS=$(aws cloudformation describe-stacks \
+STATUS=$(aws --profile admin cloudformation describe-stacks \
 --stack-name "$CFN_STACKS" \
 --region "$REGION" \
 --query "Stacks[0].StackStatus" \
@@ -26,12 +26,29 @@ STATUS=$(aws cloudformation describe-stacks \
 
 if [ "$STATUS" == "DOES_NOT_EXIST" ]; then
 echo "  Stack $CFN_STACKS does not exist, skipping."
-continue
+exit 0
 fi
 
+echo "  Purging extra IAM managed policy versions (prevents DELETE_FAILED on stack delete)..."
+for POLICY_NAME in SDL-GlueBoundary SDL-FirehoseBoundary SDL-KDG-Boundary; do
+  POLICY_ARN=$(aws --profile admin iam list-policies --scope Local \
+    --query "Policies[?PolicyName=='$POLICY_NAME'].Arn" --output text 2>/dev/null)
+  if [ -n "$POLICY_ARN" ]; then
+    aws --profile admin iam list-policy-versions \
+      --policy-arn "$POLICY_ARN" \
+      --query "Versions[?IsDefaultVersion==\`false\`].VersionId" \
+      --output text \
+    | tr '\t' '\n' \
+    | grep -v '^$' \
+    | xargs -I{} aws --profile admin iam delete-policy-version \
+        --policy-arn "$POLICY_ARN" --version-id {}
+    echo "    $POLICY_NAME: versions purged."
+  fi
+done
+
 echo "  Deleting stack: $CFN_STACKS (current status: $STATUS)"
-aws cloudformation delete-stack --stack-name "$CFN_STACKS" --region "$REGION"
-aws cloudformation wait stack-delete-complete --stack-name "$CFN_STACKS" --region "$REGION"
+aws --profile admin cloudformation delete-stack --stack-name "$CFN_STACKS" --region "$REGION"
+aws --profile admin cloudformation wait stack-delete-complete --stack-name "$CFN_STACKS" --region "$REGION"
 echo "  Stack $CFN_STACKS deleted."
 
 echo ""
