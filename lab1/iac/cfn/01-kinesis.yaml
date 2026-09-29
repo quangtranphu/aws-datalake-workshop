@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SDL Workshop - Kinesis Firehose delivery stream writing raw records to the SDL
+  S3 bucket with time-based dynamic prefixes, GZIP compression, and CloudWatch
+  error logging. Depends on SDL-Service-Roles stack (creates SDL-FirehoseRole,
+  the S3 bucket, and the /aws/kinesisfirehose/sdl-firehose-stream log group).
+
+Resources:
+  SDLFirehoseStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: sdl-firehose-stream
+      DeliveryStreamType: DirectPut
+      ExtendedS3DestinationConfiguration:
+        RoleARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/SDL-FirehoseRole"
+        BucketARN: !Sub "arn:${AWS::Partition}:s3:::sdl-immersion-day-${AWS::AccountId}"
+        Prefix: "raw/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/"
+        ErrorOutputPrefix: "error/"
+        BufferingHints:
+          SizeInMBs: 1
+          IntervalInSeconds: 60
+        CompressionFormat: GZIP
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: /aws/kinesisfirehose/sdl-firehose-stream
+          LogStreamName: S3Delivery
+
+Outputs:
+  FirehoseStreamName:
+    Description: Name of the Kinesis Firehose delivery stream
+    Value: !Ref SDLFirehoseStream
+    Export:
+      Name: SDL-FirehoseStreamName
+
+  FirehoseStreamArn:
+    Description: ARN of the Kinesis Firehose delivery stream
+    Value: !GetAtt SDLFirehoseStream.Arn
+    Export:
+      Name: SDL-FirehoseStreamArn

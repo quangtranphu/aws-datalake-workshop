@@ -29,9 +29,9 @@ echo "  Stack $CFN_STACKS does not exist, skipping."
 continue
 fi
 
-echo "  Deleting stack: $STACK (current status: $STATUS)"
-aws cloudformation delete-stack --stack-name "$STACK" --region "$REGION"
-aws cloudformation wait stack-delete-complete --stack-name "$STACK" --region "$REGION"
+echo "  Deleting stack: $CFN_STACKS (current status: $STATUS)"
+aws cloudformation delete-stack --stack-name "$CFN_STACKS" --region "$REGION"
+aws cloudformation wait stack-delete-complete --stack-name "$CFN_STACKS" --region "$REGION"
 echo "  Stack $CFN_STACKS deleted."
 
 echo ""

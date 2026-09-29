@@ -3,7 +3,7 @@
 set -e
 
 REGION="eu-central-1"
-SERVICE_ROLE_STACK="SDL-Service-Roles"
+KINESIS_STACK="SDL-Firehose"
 COGNITO_STACK="Kinesis-Data-Generator-Cognito-User"
 KDG_USERNAME="aws-datalake"
 KDG_PASSWORD="password12"
@@ -11,17 +11,16 @@ KDG_PASSWORD="password12"
 echo "====Deploy all stacks via CloudFormation===="
 
 echo ""
-echo "---- [1/2] Deploying Service Roles stack: $SERVICE_ROLE_STACK ----"
+echo "---- [1/2] Deploying Kinesis Firehose stream stack: $KINESIS_STACK ----"
 aws cloudformation deploy \
-  --template-file cfn.json \
-  --stack-name $SERVICE_ROLE_STACK \
-  --region $REGION \
-  --capabilities CAPABILITY_NAMED_IAM
+  --template-file 01-kinesis.yaml \
+  --stack-name SDL-Firehose \
+  --region eu-central-1
 
 echo ""
 echo "---- [2/2] Deploying Cognito / KDG stack: $COGNITO_STACK ----"
 aws cloudformation deploy \
-  --template-file cognito-setup.yaml \
+  --template-file 02-cognito-setup.yaml \
   --stack-name $COGNITO_STACK \
   --region $REGION \
   --capabilities CAPABILITY_NAMED_IAM \

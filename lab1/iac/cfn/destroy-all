@@ -9,6 +9,10 @@ SECRET_NAME="KinesisDataGeneratorUser"
 
 CFN_STACKS="Kinesis-Data-Generator-Cognito-User"
 
+CFN_STACKS=(
+  "Kinesis-Data-Generator-Cognito-User"
+  "SDL-Firehose"
+)
 
 echo "====Destroying all infrastructure===="
 echo "Account : $ACCOUNT_ID"
@@ -31,21 +35,23 @@ echo ""
 
 echo "---- [2/3] Deleting CloudFormation stacks ----"
 
-STATUS=$(aws cloudformation describe-stacks \
---stack-name "$CFN_STACKS" \
---region "$REGION" \
---query "Stacks[0].StackStatus" \
---output text 2>/dev/null || echo "DOES_NOT_EXIST")
+for STACK in "${CFN_STACKS[@]}"; do
+  STATUS=$(aws cloudformation describe-stacks \
+    --stack-name "$STACK" \
+    --region "$REGION" \
+    --query "Stacks[0].StackStatus" \
+    --output text 2>/dev/null || echo "DOES_NOT_EXIST")
 
-if [ "$STATUS" == "DOES_NOT_EXIST" ]; then
-echo "  Stack $CFN_STACKS does not exist, skipping."
-continue
-fi
+  if [ "$STATUS" == "DOES_NOT_EXIST" ]; then
+    echo "  Stack $STACK does not exist, skipping."
+    continue
+  fi
 
-echo "  Deleting stack: $STACK (current status: $STATUS)"
-aws cloudformation delete-stack --stack-name "$STACK" --region "$REGION"
-aws cloudformation wait stack-delete-complete --stack-name "$STACK" --region "$REGION"
-echo "  Stack $CFN_STACKS deleted."
+  echo "  Deleting stack: $STACK (current status: $STATUS)"
+  aws cloudformation delete-stack --stack-name "$STACK" --region "$REGION"
+  aws cloudformation wait stack-delete-complete --stack-name "$STACK" --region "$REGION"
+  echo "  Stack $STACK deleted."
+done
 
 echo ""
 
