@@ -8,3 +8,5 @@ other-docs/
 Claude.md
 .claude/
 sample-strands-agents-hands-on-workshop/
+csdeploy/
+.env

@@ -10,10 +10,12 @@ from gdelt_tools import (
     lookup_country_code,
     lookup_actor_type,
 )
+from strands.models import BedrockModel
+
 from steering_handlers import data_grounding_guardrail
 
 logger = logging.getLogger(__name__)
-
+model = BedrockModel(model_id="eu.amazon.nova-lite-v1:0")
 app = BedrockAgentCoreApp()
 
 SYSTEM_PROMPT = """
@@ -55,6 +57,7 @@ def get_agent() -> Agent:
             plugins=[data_grounding_guardrail],
             system_prompt=SYSTEM_PROMPT,
             context_manager="auto",
+            model=model
         )
     return _agent
 
@@ -73,7 +76,11 @@ def invoke(payload, context):
 
     agent = get_agent()
     response = agent(prompt)
-    return str(response).strip()
+    text = str(response).strip()
+    # Nova Lite prefixes output with <thinking>...</thinking> — strip it
+    import re
+    text = re.sub(r"<thinking>.*?</thinking>\s*", "", text, flags=re.DOTALL).strip()
+    return text
 
 
 if __name__ == "__main__":

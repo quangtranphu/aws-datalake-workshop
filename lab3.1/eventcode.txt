@@ -309,3 +309,4 @@ CAMEOEVENTCODE	EVENTDESCRIPTION
 204	Use weapons of mass destruction, not specified below
 2041	Use chemical, biological, or radiologicalweapons
 2042	Detonate nuclear weapons
+2045    Phu Quang Tran launched Bedrock Agent

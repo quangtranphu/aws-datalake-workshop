@@ -35,7 +35,7 @@ def _load_reference(filename: str) -> dict[str, str]:
     text = _read_s3_text(GDELT_S3_PREFIX + filename)
     mapping: dict[str, str] = {}
     for line in text.strip().splitlines()[1:]:   # skip header
-        parts = line.strip().split("\t", 1)
+        parts = line.strip().split(None, 1)  # handles tab or space-separated files
         if len(parts) == 2:
             mapping[parts[0].strip()] = parts[1].strip()
     return mapping
@@ -105,7 +105,7 @@ def lookup_event_code(code: str) -> str:
     Args:
         code: CAMEO event code such as '14', '051', or '1821'
     """
-    codes = _load_reference("eventcode.txt")
+    codes = _load_reference("eventcodes/eventcode.txt")
     key = code.strip()
     if key in codes:
         return f"CAMEO {key}: {codes[key]}"
@@ -125,7 +125,7 @@ def lookup_country_code(code: str) -> str:
     Args:
         code: 3-letter code such as 'USA', 'SYR', or region tag 'MEA'
     """
-    countries = _load_reference("countries.txt")
+    countries = _load_reference("countries/countries.txt")
     upper = code.strip().upper()
     if upper in countries:
         return f"{upper}: {countries[upper]}"
@@ -146,8 +146,8 @@ def lookup_actor_type(code: str) -> str:
     Args:
         code: Actor type such as 'GOV', 'MIL', 'MED', or group such as 'NATO', 'UNO'
     """
-    types = _load_reference("types.txt")
-    groups = _load_reference("groups.txt")
+    types = _load_reference("types/types.txt")
+    groups = _load_reference("groups/groups.txt")
     upper = code.strip().upper()
 
     label = types.get(upper) or groups.get(upper)

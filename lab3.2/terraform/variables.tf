@@ -39,15 +39,3 @@ variable "vector_dimensions" {
   type        = number
   default     = 1024
 }
-
-variable "aoss_index_name" {
-  description = "OpenSearch Serverless index name for the GDELT vector store"
-  type        = string
-  default     = "gdelt-events-index"
-}
-
-variable "additional_admin_arns" {
-  description = "Extra IAM principal ARNs (users or roles) granted admin access to the AOSS collection"
-  type        = list(string)
-  default     = []
-}

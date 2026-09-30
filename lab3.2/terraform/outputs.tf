@@ -13,14 +13,14 @@ output "data_source_id" {
   value       = aws_bedrockagent_data_source.gdelt_s3.data_source_id
 }
 
-output "aoss_collection_endpoint" {
-  description = "OpenSearch Serverless collection endpoint"
-  value       = aws_opensearchserverless_collection.gdelt.collection_endpoint
+output "vector_bucket_name" {
+  description = "S3 Vectors bucket name backing the knowledge base"
+  value       = aws_s3vectors_vector_bucket.gdelt.vector_bucket_name
 }
 
-output "aoss_collection_arn" {
-  description = "OpenSearch Serverless collection ARN"
-  value       = aws_opensearchserverless_collection.gdelt.arn
+output "vector_bucket_arn" {
+  description = "S3 Vectors bucket ARN backing the knowledge base"
+  value       = aws_s3vectors_vector_bucket.gdelt.vector_bucket_arn
 }
 
 output "kb_iam_role_arn" {
@@ -34,7 +34,7 @@ output "agentcore_iam_role_arn" {
 }
 
 output "sync_command" {
-  description = "AWS CLI command to trigger a knowledge base sync after the data source is created"
+  description = "AWS CLI command to trigger a knowledge base sync after new data lands in S3"
   value = join(" ", [
     "aws bedrock-agent start-ingestion-job",
     "--knowledge-base-id", aws_bedrockagent_knowledge_base.gdelt.id,

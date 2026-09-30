@@ -1,9 +1,8 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  account_id     = data.aws_caller_identity.current.account_id
-  region         = var.aws_region
-  collection_name = "${var.project_name}-vectors"
+  account_id          = data.aws_caller_identity.current.account_id
+  region              = var.aws_region
   embedding_model_arn = "arn:aws:bedrock:${local.region}::foundation-model/${var.embedding_model_id}"
   gdelt_bucket_arn    = "arn:aws:s3:::${var.gdelt_bucket}"
 }
@@ -17,92 +16,23 @@ data "aws_iam_role" "kb_role" {
 }
 
 # ---------------------------------------------------------------------------
-# OpenSearch Serverless — encryption, network, and access policies
+# S3 Vectors — vector bucket and index (AWS-managed, no AOSS needed)
 # ---------------------------------------------------------------------------
 
-resource "aws_opensearchserverless_security_policy" "encryption" {
-  name        = "${var.project_name}-enc"
-  type        = "encryption"
-  description = "AWS-managed encryption for ${local.collection_name}"
-
-  policy = jsonencode({
-    Rules = [{
-      ResourceType = "collection"
-      Resource     = ["collection/${local.collection_name}"]
-    }]
-    AWSOwnedKey = true
-  })
+resource "aws_s3vectors_vector_bucket" "gdelt" {
+  vector_bucket_name = "${var.project_name}-vectors"
 }
 
-resource "aws_opensearchserverless_security_policy" "network" {
-  name        = "${var.project_name}-net"
-  type        = "network"
-  description = "Public access for ${local.collection_name}"
-
-  policy = jsonencode([{
-    Rules = [
-      {
-        ResourceType = "collection"
-        Resource     = ["collection/${local.collection_name}"]
-      },
-      {
-        ResourceType = "dashboard"
-        Resource     = ["collection/${local.collection_name}"]
-      },
-    ]
-    AllowFromPublic = true
-  }])
-}
-
-resource "aws_opensearchserverless_access_policy" "access" {
-  name        = "${var.project_name}-access"
-  type        = "data"
-  description = "Grants KB role and admins full index access"
-
-  policy = jsonencode([{
-    Rules = [
-      {
-        ResourceType = "index"
-        Resource     = ["index/${local.collection_name}/*"]
-        Permission   = ["aoss:*"]
-      },
-      {
-        ResourceType = "collection"
-        Resource     = ["collection/${local.collection_name}"]
-        Permission   = ["aoss:*"]
-      },
-    ]
-    Principal = concat(
-      [data.aws_iam_role.kb_role.arn],
-      var.additional_admin_arns,
-    )
-  }])
+resource "aws_s3vectors_index" "gdelt" {
+  vector_bucket_name = aws_s3vectors_vector_bucket.gdelt.vector_bucket_name
+  index_name         = "gdelt-index"
+  data_type          = "float32"
+  dimension          = var.vector_dimensions
+  distance_metric    = "cosine"
 }
 
 # ---------------------------------------------------------------------------
-# OpenSearch Serverless collection
-# ---------------------------------------------------------------------------
-
-resource "aws_opensearchserverless_collection" "gdelt" {
-  name        = local.collection_name
-  type        = "VECTORSEARCH"
-  description = "Vector store for GDELT events knowledge base"
-
-  depends_on = [
-    aws_opensearchserverless_security_policy.encryption,
-    aws_opensearchserverless_security_policy.network,
-    aws_opensearchserverless_access_policy.access,
-  ]
-}
-
-# Allow the collection to become ACTIVE before creating the knowledge base.
-resource "time_sleep" "wait_for_collection" {
-  create_duration = "90s"
-  depends_on      = [aws_opensearchserverless_collection.gdelt]
-}
-
-# ---------------------------------------------------------------------------
-# Bedrock Knowledge Base
+# Bedrock Knowledge Base — backed by S3 Vectors
 # ---------------------------------------------------------------------------
 
 resource "aws_bedrockagent_knowledge_base" "gdelt" {
@@ -118,19 +48,13 @@ resource "aws_bedrockagent_knowledge_base" "gdelt" {
   }
 
   storage_configuration {
-    type = "OPENSEARCH_SERVERLESS"
-    opensearch_serverless_configuration {
-      collection_arn    = aws_opensearchserverless_collection.gdelt.arn
-      vector_index_name = var.aoss_index_name
-      field_mapping {
-        vector_field   = "bedrock-knowledge-base-default-vector"
-        text_field     = "AMAZON_BEDROCK_TEXT_CHUNK"
-        metadata_field = "AMAZON_BEDROCK_METADATA"
-      }
+    type = "S3_VECTORS"
+    s3_vectors_configuration {
+      index_arn = aws_s3vectors_index.gdelt.index_arn
     }
   }
 
-  depends_on = [time_sleep.wait_for_collection]
+  depends_on = [aws_s3vectors_index.gdelt]
 }
 
 # ---------------------------------------------------------------------------
@@ -154,8 +78,8 @@ resource "aws_bedrockagent_data_source" "gdelt_s3" {
     chunking_configuration {
       chunking_strategy = "FIXED_SIZE"
       fixed_size_chunking_configuration {
-        max_tokens         = 512
-        overlap_percentage = 20
+        max_tokens         = 150
+        overlap_percentage = 10
       }
     }
   }
