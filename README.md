@@ -2,6 +2,8 @@ AWS Serverless Data Lake Workshop Documentation
 
 Reference workshop: [AWS Serverless Data Lake Workshop](https://catalog.us-east-1.prod.workshops.aws/workshops/ea7ddf16-5e0a-4ec7-b54e-5cadf3028b78/en-US)
 
+![Solution Architecture](./solution-architecture.jpeg)
+
 1. Prerequisites:
 
     - Folder: 00-setup
@@ -63,8 +65,8 @@ Reference workshop: [AWS Serverless Data Lake Workshop](https://catalog.us-east-
         cd ../..
 
         # 6. Test locally, then deploy and invoke
-        agentcore dev                                          # local server for testing
-        agentcore deploy                                       # package to S3 + provision runtime
+        agentcore dev         # local server for testing
+        agentcore deploy      # package to S3 + provision runtime
         agentcore invoke
 
         Clean up

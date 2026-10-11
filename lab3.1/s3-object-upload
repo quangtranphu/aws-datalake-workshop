@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BUCKET="s3://sdl-immersion-day-220334428465"
+FILES_DIR="$(dirname "$0")/files"
+
+for filepath in "$FILES_DIR"/*.txt; do
+  filename="$(basename "$filepath")"
+  name="${filename%.txt}"
+  aws s3 cp "$filepath" "${BUCKET}/gdelt/${name}/${filename}"
+  echo "Uploaded: ${BUCKET}/gdelt/${name}/${filename}"
+done
