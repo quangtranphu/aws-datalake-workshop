@@ -101,6 +101,7 @@
 			"Sid": "ManageWorkshopFirehose",
 			"Effect": "Allow",
 			"Action": [
+				"firehose:ListTagsForDeliveryStream",
 				"firehose:CreateDeliveryStream",
 				"firehose:DeleteDeliveryStream",
 				"firehose:DescribeDeliveryStream",
@@ -222,11 +223,10 @@
 			],
 			"Resource": [
 				"arn:aws:glue:*:*:catalog",
-				"arn:aws:glue:*:*:database/default",
-				"arn:aws:glue:*:*:database/sdl-demo-data",
-				"arn:aws:glue:*:*:database/gdelt",
-				"arn:aws:glue:*:*:table/sdl-demo-data/*",
-				"arn:aws:glue:*:*:table/gdelt/*"
+				"arn:aws:glue:*:*:database/*",
+				"arn:aws:glue:*:*:table/*",
+				"arn:aws:glue:*:*:userDefinedFunction/sdl-demo-data/*",
+				"arn:aws:glue:*:*:userDefinedFunction/gdelt/*"
 			]
 		},
 		{
@@ -294,8 +294,8 @@
 				"cloudformation:UpdateStack"
 			],
 			"Resource": [
-				"arn:aws:cloudformation:*:*:stack/SDL-Service-Roles/*",
-				"arn:aws:cloudformation:us-east-1:*:stack/Kinesis-Data-Generator-Cognito-User/*"
+				"arn:aws:cloudformation:*:*:stack/SDL-*/*",
+				"arn:aws:cloudformation:*:*:stack/Kinesis-Data-Generator-Cognito-User/*"
 			]
 		}
 	]

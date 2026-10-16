@@ -26,6 +26,7 @@
         "iam:DeleteRole",
         "iam:DeleteRolePolicy",
         "iam:GetRole",
+        "iam:PassRole",
         "iam:PutRolePolicy",
         "iam:TagRole",
         "iam:UntagRole",
@@ -87,6 +88,58 @@
           "aws:CalledVia": "cloudformation.amazonaws.com"
         }
       }
+    },
+    {
+      "Sid": "AllowKDGSecret",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:DeleteSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:TagResource",
+        "secretsmanager:UntagResource",
+        "secretsmanager:UpdateSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:*:*:secret:KinesisDataGeneratorUser*"
+    },
+    {
+      "Sid": "AllowCognitoForKDG",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:AdminConfirmSignUp",
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminSetUserPassword",
+        "cognito-idp:CreateUserPool",
+        "cognito-idp:CreateUserPoolClient",
+        "cognito-idp:DeleteUserPool",
+        "cognito-idp:DeleteUserPoolClient",
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:GetUserPoolMfaConfig",
+        "cognito-idp:TagResource",
+        "cognito-idp:UntagResource",
+        "cognito-identity:CreateIdentityPool",
+        "cognito-identity:DeleteIdentityPool",
+        "cognito-identity:DescribeIdentityPool",
+        "cognito-identity:GetIdentityPoolRoles",
+        "cognito-identity:SetIdentityPoolRoles",
+        "cognito-identity:TagResource",
+        "cognito-identity:UntagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowGlueGetTags",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetTags",
+        "glue:DeleteDatabase"
+      ],
+      "Resource": "*"
     },
     {
       "Sid": "DenyPrivilegeEscalationAndIdentityAdministration",

@@ -1,5 +1,5 @@
 terraform {
-  required_version = "1.9.7"
+  required_version = "1.16.4"
 
   required_providers {
     aws = {
@@ -28,7 +28,6 @@ variable "kdg_password" {
 
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
-data "aws_partition" "current" {}
 
 # ─── Pre-existing resources created by admin (iam-freeconciled.json CFn stack) ─
 
@@ -61,200 +60,35 @@ resource "aws_kinesis_firehose_delivery_stream" "sdl" {
   }
 }
 
-# ─── Stack 2: SDL-Cognito-Setup (cognito-setup.yaml) ─────────────────────────
+# ─── Stack 2: SDL-Cognito-Setup via CloudFormation ───────────────────────────
+# Deploying via CloudFormation so IAM roles are created with the SDL-KDG-Boundary
+# permissions boundary, satisfying the participant guardrails policy conditions.
 
-resource "aws_secretsmanager_secret" "kdg" {
-  name                    = "KinesisDataGeneratorUser"
-  description             = "Secret for the Cognito User for the Kinesis Data Generator"
-  recovery_window_in_days = 0
-}
+resource "aws_cloudformation_stack" "kdg_cognito" {
+  name          = "Kinesis-Data-Generator-Cognito-User"
+  template_body = file("${path.module}/../cfn/02-cognito-setup.yaml")
+  capabilities  = ["CAPABILITY_IAM"]
 
-resource "aws_secretsmanager_secret_version" "kdg" {
-  secret_id     = aws_secretsmanager_secret.kdg.id
-  secret_string = jsonencode({ username = var.kdg_username, password = var.kdg_password })
-}
-
-resource "aws_iam_role" "kdg_lambda_exec" {
-  name = "KDG-SetupLambdaExecutionRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "lambda.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "kdg_lambda_exec_policy" {
-  name = "SetupCognitoLambda"
-  role = aws_iam_role.kdg_lambda_exec.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "arn:${data.aws_partition.current.partition}:logs:*:*:log-group:/aws/lambda/KinesisDataGeneratorCognitoSetup*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["cognito-idp:AdminConfirmSignUp", "cognito-idp:CreateUserPoolClient", "cognito-idp:AdminCreateUser"]
-        Resource = "arn:${data.aws_partition.current.partition}:cognito-idp:*:*:userpool/*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["cognito-idp:CreateUserPool", "cognito-identity:CreateIdentityPool", "cognito-identity:SetIdentityPoolRoles"]
-        Resource = "*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["iam:UpdateAssumeRolePolicy", "iam:PassRole"]
-        Resource = [aws_iam_role.kdg_auth.arn, aws_iam_role.kdg_unauth.arn]
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role" "kdg_auth" {
-  name = "KDG-AuthenticatedUserRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Federated = "cognito-identity.amazonaws.com" }
-      Action    = "sts:AssumeRoleWithWebIdentity"
-      Condition = {
-        StringEquals = {
-          "cognito-identity.amazonaws.com:aud" = aws_cognito_identity_pool.kdg.id
-        }
-        "ForAnyValue:StringLike" = {
-          "cognito-identity.amazonaws.com:amr" = "authenticated"
-        }
-      }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "kdg_auth_policy" {
-  name = "AllowStreaming"
-  role = aws_iam_role.kdg_auth.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["kinesis:DescribeStream", "kinesis:PutRecord", "kinesis:PutRecords"]
-        Resource = "arn:${data.aws_partition.current.partition}:kinesis:*:*:stream/*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["firehose:DescribeDeliveryStream", "firehose:PutRecord", "firehose:PutRecordBatch"]
-        Resource = "arn:${data.aws_partition.current.partition}:firehose:*:*:deliverystream/*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["ec2:DescribeRegions", "firehose:ListDeliveryStreams", "kinesis:ListStreams"]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role" "kdg_unauth" {
-  name = "KDG-UnauthenticatedUserRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Federated = "cognito-identity.amazonaws.com" }
-      Action    = "sts:AssumeRoleWithWebIdentity"
-      Condition = {
-        StringEquals = {
-          "cognito-identity.amazonaws.com:aud" = aws_cognito_identity_pool.kdg.id
-        }
-        "ForAnyValue:StringLike" = {
-          "cognito-identity.amazonaws.com:amr" = "unauthenticated"
-        }
-      }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "kdg_unauth_policy" {
-  name = "DenyAll"
-  role = aws_iam_role.kdg_unauth.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Deny"
-      Action   = "*"
-      Resource = "*"
-    }]
-  })
-}
-
-# ─── Cognito User Pool + User ─────────────────────────────────────────────────
-
-resource "aws_cognito_user_pool" "kdg" {
-  name = "KiensisDataGeneratorUserPool"
-
-  password_policy {
-    minimum_length    = 6
-    require_uppercase = false
-    require_lowercase = true
-    require_numbers   = true
-    require_symbols   = false
+  parameters = {
+    Username               = var.kdg_username
+    Password               = var.kdg_password
+    PermissionsBoundaryArn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/SDL-KDG-Boundary"
   }
+
 }
 
-resource "aws_cognito_user_pool_client" "kdg" {
-  name         = "KinesisDataGeneratorUserPoolClient"
-  user_pool_id = aws_cognito_user_pool.kdg.id
-
-  explicit_auth_flows = [
-    "ALLOW_USER_SRP_AUTH",
-    "ALLOW_USER_PASSWORD_AUTH",
-    "ALLOW_REFRESH_TOKEN_AUTH",
-  ]
-}
+# ─── Cognito User ────────────────────────────────────────────────────────────
 
 resource "aws_cognito_user" "kdg" {
-  user_pool_id = aws_cognito_user_pool.kdg.id
+  user_pool_id = aws_cloudformation_stack.kdg_cognito.outputs["UserPoolId"]
   username     = var.kdg_username
+  password     = var.kdg_password
 
-  password       = var.kdg_password
   message_action = "SUPPRESS"
 
   attributes = {
     email          = "${var.kdg_username}@example.com"
     email_verified = true
-  }
-}
-
-resource "aws_cognito_identity_pool" "kdg" {
-  identity_pool_name               = "KinesisDataGeneratorIdentityPool"
-  allow_unauthenticated_identities = false
-
-  cognito_identity_providers {
-    client_id               = aws_cognito_user_pool_client.kdg.id
-    provider_name           = aws_cognito_user_pool.kdg.endpoint
-    server_side_token_check = false
-  }
-}
-
-resource "aws_cognito_identity_pool_roles_attachment" "kdg" {
-  identity_pool_id = aws_cognito_identity_pool.kdg.id
-
-  roles = {
-    authenticated   = aws_iam_role.kdg_auth.arn
-    unauthenticated = aws_iam_role.kdg_unauth.arn
   }
 }
 
@@ -272,15 +106,16 @@ output "firehose_role_arn" {
   value = data.aws_iam_role.firehose.arn
 }
 
-output "kdg_secret_arn" {
-  value = aws_secretsmanager_secret.kdg.arn
-}
-
 output "firehose_stream_arn" {
   value = aws_kinesis_firehose_delivery_stream.sdl.arn
 }
 
 output "kdg_url" {
   description = "Kinesis Data Generator URL"
-  value       = "https://awslabs.github.io/amazon-kinesis-data-generator/web/producer.html?upid=${aws_cognito_user_pool.kdg.id}&cid=${aws_cognito_user_pool_client.kdg.id}&ipid=${aws_cognito_identity_pool.kdg.id}&r=${data.aws_region.current.name}"
+  value       = aws_cloudformation_stack.kdg_cognito.outputs["KinesisDataGeneratorUrl"]
+}
+
+output "kdg_secret_arn" {
+  description = "SecretsManager secret storing the KDG Cognito credentials"
+  value       = aws_cloudformation_stack.kdg_cognito.outputs["KinesisDataGeneratorCognitoUser"]
 }

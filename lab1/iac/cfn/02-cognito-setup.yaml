@@ -1,6 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: "This template creates an Amazon Cognito User Pool and Identity Pool, with a single user.  It assigns a role to authenticated users in the identity pool to enable the users to use the Kinesis Data Generator tool."
+Description: >
+  SDL Workshop - Cognito User Pool and Identity Pool for Kinesis Data Generator.
+  Uses native CloudFormation Cognito resources (no Lambda dependency).
 
 Parameters:
   Username:
@@ -38,13 +40,6 @@ Conditions:
       - !Ref PermissionsBoundaryArn
       - ""
 
-Mappings:
-  PrincipalMap:
-    aws-us-gov:
-      cognito: cognito-identity-us-gov.amazonaws.com
-    aws:
-      cognito: cognito-identity.amazonaws.com
-
 Resources:
   KinesisDataGeneratorSecret:
     Type: "AWS::SecretsManager::Secret"
@@ -55,170 +50,130 @@ Resources:
       Description: Secret for the Cognito User for the Kinesis Data Generator
       SecretString: !Sub '{ "username": "${Username}", "password": "${Password}" }'
 
-  DataGenCognitoSetupLambdaFunc:
-    Type: "AWS::Lambda::Function"
+  UserPool:
+    Type: "AWS::Cognito::UserPool"
     Properties:
-      Code:
-        S3Bucket: !Sub "aws-kdg-tools-${AWS::Region}"
-        S3Key: datagen-cognito-setup.zip
-      Description: "Creates a Cognito User Pool, Identity Pool, and a User.  Returns IDs to be used in the Kinesis Data Generator."
-      FunctionName: KinesisDataGeneratorCognitoSetup
-      Handler: createCognitoPool.createPoolAndUser
-      Role: !GetAtt SetupLambdaExecutionRole.Arn
-      Runtime: nodejs18.x
-      Timeout: 120
-
-  SetupLambdaExecutionRole:
-    Type: "AWS::IAM::Role"
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-            Action:
-              - "sts:AssumeRole"
-      PermissionsBoundary: !If
-        - SetPermissionsBoundary
-        - !Ref PermissionsBoundaryArn
-        - !Ref AWS::NoValue
-      Path: /
+      UserPoolName: KinesisDataGeneratorUserPool
       Policies:
-        - PolicyName: SetupCognitoLambda
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:logs:*:*:log-group:/aws/lambda/KinesisDataGeneratorCognitoSetup*"
-              - Effect: Allow
-                Action:
-                  - "cognito-idp:AdminConfirmSignUp"
-                  - "cognito-idp:CreateUserPoolClient"
-                  - "cognito-idp:AdminCreateUser"
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:cognito-idp:*:*:userpool/*"
-              - Effect: Allow
-                Action:
-                  - "cognito-idp:CreateUserPool"
-                  - "cognito-identity:CreateIdentityPool"
-                  - "cognito-identity:SetIdentityPoolRoles"
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - "iam:UpdateAssumeRolePolicy"
-                Resource:
-                  - !GetAtt AuthenticatedUserRole.Arn
-                  - !GetAtt UnauthenticatedUserRole.Arn
-              - Effect: Allow
-                Action:
-                  - "iam:PassRole"
-                Resource:
-                  - !GetAtt AuthenticatedUserRole.Arn
-                  - !GetAtt UnauthenticatedUserRole.Arn
+        PasswordPolicy:
+          MinimumLength: 6
+          RequireUppercase: false
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
 
-  SetupCognitoCustom:
-    Type: "Custom::DataGenCognitoSetupLambdaFunc"
+  UserPoolClient:
+    Type: "AWS::Cognito::UserPoolClient"
     Properties:
-      ServiceToken: !GetAtt DataGenCognitoSetupLambdaFunc.Arn
-      Region: !Ref "AWS::Region"
-      Username: !Ref Username
-      Password: !Ref Password
-      AuthRoleName: !Ref AuthenticatedUserRole
-      AuthRoleArn: !GetAtt AuthenticatedUserRole.Arn
-      UnauthRoleName: !Ref UnauthenticatedUserRole
-      UnauthRoleArn: !GetAtt UnauthenticatedUserRole.Arn
-      Partition: !Ref AWS::Partition
+      ClientName: KinesisDataGeneratorUserPoolClient
+      UserPoolId: !Ref UserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  IdentityPool:
+    Type: "AWS::Cognito::IdentityPool"
+    Properties:
+      IdentityPoolName: KinesisDataGeneratorIdentityPool
+      AllowUnauthenticatedIdentities: false
+      CognitoIdentityProviders:
+        - ClientId: !Ref UserPoolClient
+          ProviderName: !GetAtt UserPool.ProviderName
+          ServerSideTokenCheck: false
 
   AuthenticatedUserRole:
     Type: "AWS::IAM::Role"
     Properties:
+      PermissionsBoundary: !If
+        - SetPermissionsBoundary
+        - !Ref PermissionsBoundaryArn
+        - !Ref AWS::NoValue
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              Federated:
-                - !FindInMap [PrincipalMap, !Ref AWS::Partition, cognito]
-            Action:
-              - "sts:AssumeRoleWithWebIdentity"
+              Federated: cognito-identity.amazonaws.com
+            Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                cognito-identity.amazonaws.com:aud: !Ref "AWS::StackId"
-      PermissionsBoundary: !If
-        - SetPermissionsBoundary
-        - !Ref PermissionsBoundaryArn
-        - !Ref AWS::NoValue
-      Path: /
+                "cognito-identity.amazonaws.com:aud": !Ref IdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": authenticated
       Policies:
         - PolicyName: AllowStreaming
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Action:
-                  - "kinesis:DescribeStream"
-                  - "kinesis:PutRecord"
-                  - "kinesis:PutRecords"
-                Resource:
-                  - "Fn::Sub": "arn:${AWS::Partition}:kinesis:*:*:stream/*"
-                Effect: Allow
-              - Action:
-                  - "firehose:DescribeDeliveryStream"
-                  - "firehose:PutRecord"
-                  - "firehose:PutRecordBatch"
-                Resource:
-                  - "Fn::Sub": "arn:${AWS::Partition}:firehose:*:*:deliverystream/*"
-                Effect: Allow
-              - Action:
-                  - "ec2:DescribeRegions"
-                  - "firehose:ListDeliveryStreams"
-                  - "kinesis:ListStreams"
-                Resource:
-                  - "*"
-                Effect: Allow
+              - Effect: Allow
+                Action:
+                  - kinesis:DescribeStream
+                  - kinesis:PutRecord
+                  - kinesis:PutRecords
+                Resource: !Sub "arn:${AWS::Partition}:kinesis:*:*:stream/*"
+              - Effect: Allow
+                Action:
+                  - firehose:DescribeDeliveryStream
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource: !Sub "arn:${AWS::Partition}:firehose:*:*:deliverystream/*"
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeRegions
+                  - firehose:ListDeliveryStreams
+                  - kinesis:ListStreams
+                Resource: "*"
 
   UnauthenticatedUserRole:
     Type: "AWS::IAM::Role"
     Properties:
+      PermissionsBoundary: !If
+        - SetPermissionsBoundary
+        - !Ref PermissionsBoundaryArn
+        - !Ref AWS::NoValue
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              Federated:
-                - !FindInMap [PrincipalMap, !Ref AWS::Partition, cognito]
-            Action:
-              - "sts:AssumeRoleWithWebIdentity"
+              Federated: cognito-identity.amazonaws.com
+            Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                cognito-identity.amazonaws.com:aud: !Ref "AWS::StackId"
-      PermissionsBoundary: !If
-        - SetPermissionsBoundary
-        - !Ref PermissionsBoundaryArn
-        - !Ref AWS::NoValue
-      Path: /
+                "cognito-identity.amazonaws.com:aud": !Ref IdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": unauthenticated
       Policies:
         - PolicyName: DenyAll
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Deny
-                Action:
-                  - "*"
-                Resource:
-                  - "*"
+                Action: "*"
+                Resource: "*"
+
+  IdentityPoolRoleAttachment:
+    Type: "AWS::Cognito::IdentityPoolRoleAttachment"
+    Properties:
+      IdentityPoolId: !Ref IdentityPool
+      Roles:
+        authenticated: !GetAtt AuthenticatedUserRole.Arn
+        unauthenticated: !GetAtt UnauthenticatedUserRole.Arn
 
 Outputs:
   KinesisDataGeneratorUrl:
     Description: The URL for your Kinesis Data Generator.
-    Value: !Sub "https://awslabs.github.io/amazon-kinesis-data-generator/web/producer.html?${SetupCognitoCustom.Querystring}"
+    Value: !Sub
+      - "https://awslabs.github.io/amazon-kinesis-data-generator/web/producer.html?upid=${UserPoolId}&cid=${ClientId}&ipid=${IdentityPoolId}&r=${AWS::Region}"
+      - UserPoolId: !Ref UserPool
+        ClientId: !Ref UserPoolClient
+        IdentityPoolId: !Ref IdentityPool
 
   KinesisDataGeneratorCognitoUser:
     Description: We saved your Cognito user/password in AWS Secrets
     Value: !Ref KinesisDataGeneratorSecret
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
